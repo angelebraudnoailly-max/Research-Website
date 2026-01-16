@@ -7,57 +7,70 @@ import psycopg2
 import matplotlib.pyplot as plt
 from flask import Flask, render_template, request, redirect, flash, jsonify
 
-# On importe vos modules de visualisation
-# IMPORTANT : Assurez-vous que ces fichiers ne font PAS de pd.read_csv() au démarrage !
-# Ils doivent contenir seulement des fonctions qui acceptent un DataFrame en entrée.
-from graph import get_graphs_from_data           # (Nom supposé fonction adaptée)
+# --- IMPORTS CORRIGÉS ---
+# On importe les fonctions "passives" des autres fichiers
+from graph import get_graphs 
 from contact import send_email
-# from topics import get_lda_topics              # On va le remplacer par une requête SQL
-# from topic_author_viz import unique_names      # On va le remplacer par une requête SQL
+from topics_viz import get_lda_insights
 import topic_author_viz 
 
-app = Flask(_name_)
+app = Flask(__name__)
 app.secret_key = "secret"
 
 # Fonction utilitaire pour se connecter à Render PostgreSQL
 def get_db_connection():
+    # Cette variable est créée automatiquement par Render quand vous liez la DB
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     return conn
 
 # ---------------------------------------------------------------------------
-# MAIN ROUTE (Le haut de l'Iceberg : Rapide & Léger)
+# MAIN ROUTE (Page d'accueil)
 # ---------------------------------------------------------------------------
 @app.route("/", methods=['GET'])
 def index():
     """
-    Cette route ne charge plus de fichiers. Elle interroge PostgreSQL.
+    Charge les données globales depuis PostgreSQL pour l'accueil.
     """
     conn = get_db_connection()
+    
+    # 1. LISTE DES AUTEURS (Dropdown)
+    # On récupère juste les noms uniques via SQL (très rapide)
+    # Note: Assurez-vous que la table 'catalogue_auteurs' existe (via import_csv.py)
     cur = conn.cursor()
-
-    # 1. Récupérer la liste des auteurs (Léger)
-    # Au lieu de lire tout le CSV pour trouver les noms uniques, on demande à la DB
-    # Assurez-vous d'avoir une table 'catalogue_auteurs' créée via import_csv.py
     cur.execute("SELECT DISTINCT nom_auteur FROM catalogue_auteurs ORDER BY nom_auteur ASC")
     unique_names = [row[0] for row in cur.fetchall()]
+    cur.close()
 
-    # 2. Récupérer les stats globales pour les graphs (Léger)
-    # Idéalement, vous avez stocké les données de 'get_graphs' et 'get_lda_topics'
-    # dans des tables SQL dédiées (ex: 'table_stats_globales')
-    
-    # EXEMPLE : Si vous avez mis vos stats LDA dans la DB
-    cur.execute("SELECT topic_id, keywords FROM table_topics_lda")
-    lda_topics = cur.fetchall() # Adapter selon votre structure
+    # 2. GRAPHIQUES TEMPORELS (Le Monde / Cairn)
+    # On utilise pandas read_sql pour récupérer les colonnes 'annee' et 'date_published'
+    # depuis vos tables SQL (remplacez 'table_cairn' et 'table_lemonde' par vos vrais noms de tables)
+    try:
+        # On ne charge que les colonnes nécessaires (pas tout le texte !) pour économiser la RAM
+        df_cairn_light = pd.read_sql("SELECT annee FROM table_oeuvres", conn) 
+        df_mon_light = pd.read_sql("SELECT date_published FROM table_articles_lemonde", conn)
+        
+        # On génère les graphs via graph.py
+        graph_mon, graph_cairn = get_graphs(df_cairn_light, df_mon_light)
+    except Exception as e:
+        print(f"Erreur graphs temporels : {e}")
+        graph_mon, graph_cairn = "", ""
 
-    # Si vos graphs globaux (séries temporelles) sont légers, vous pouvez 
-    # soit les avoir en SQL, soit garder un PETIT csv 'stats.csv' dans le dossier du projet
-    # Pour l'exemple, imaginons que vous ayez adapté get_graphs pour lire une table SQL :
-    # graph_mon, graph_cairn = get_graphs_from_db(conn) 
-    
-    # Pour ne pas casser votre code sans voir vos autres fichiers, je mets des placeholders
-    graph_mon = "" 
-    graph_cairn = ""
-    g_freq, g_prop, g_comb, g_disp, author_stats = "", "", "", "", ""
+    # 3. STATISTIQUES LDA (Graphs colorés)
+    # On récupère les données LDA depuis la table SQL
+    try:
+        # Remplacez 'table_lda_light' par le nom de la table contenant CAIRN_LDA_LIGHT.csv
+        df_lda = pd.read_sql("SELECT * FROM table_lda_light", conn)
+        
+        # On génère les 4 graphs et les stats via topics_viz.py
+        g_freq, g_prop, g_comb, g_disp, author_stats = get_lda_insights(df_lda)
+        
+        # Pour la liste des topics (texte), on peut la déduire ou la charger
+        # Ici on prend un dict vide pour l'exemple, ou le résultat de get_lda_topics si vous avez une table
+        topics = {} 
+    except Exception as e:
+        print(f"Erreur LDA stats : {e}")
+        g_freq, g_prop, g_comb, g_disp, author_stats = "", "", "", "", {}
+        topics = {}
 
     conn.close()
 
@@ -65,9 +78,13 @@ def index():
         "index.html",
         graph_mon=graph_mon,
         graph_cairn=graph_cairn,
-        topics=lda_topics,
-        unique_names=unique_names, # La liste dropdown vient maintenant de la DB
-        # ... autres variables ...
+        topics=topics,
+        g_freq=g_freq,
+        g_prop=g_prop,
+        g_comb=g_comb,
+        g_disp=g_disp,
+        author_stats=author_stats,
+        unique_names=unique_names
     )
 
 # ---------------------------------------------------------------------------
@@ -86,64 +103,57 @@ def contact_route():
     return redirect('/')
 
 # ---------------------------------------------------------------------------
-# AUTHOR GRAPHS ROUTE (La partie immergée : Lazy Loading depuis Google Cloud)
+# AUTHOR GRAPHS ROUTE (Lazy Loading Cloud)
 # ---------------------------------------------------------------------------
 @app.route("/author_graphs", methods=["POST"])
 def author_graphs():
-    """
-    C'est ici que la magie opère. On ne charge les données QUE quand on clique.
-    """
     data = request.json
     author_name = data.get("author")
     graph_type = data.get("graph_type", "full")
 
-    # 1. On cherche l'URL Google Cloud de cet auteur dans la Base de Données
+    # 1. Trouver l'URL Google Cloud dans la DB
     conn = get_db_connection()
     cur = conn.cursor()
-    
-    # On suppose que votre table a une colonne 'url_cloud' qui pointe vers le fichier JSON/CSV spécifique de l'auteur
-    query = "SELECT url_cloud FROM catalogue_auteurs WHERE nom_auteur = %s"
-    cur.execute(query, (author_name,))
+    # ATTENTION: Vérifiez que votre table 'catalogue_auteurs' a bien une colonne 'url_cloud'
+    # Sinon changez le nom de la colonne dans la requête ci-dessous
+    cur.execute("SELECT url_cloud FROM catalogue_auteurs WHERE nom_auteur = %s", (author_name,))
     result = cur.fetchone()
     conn.close()
 
     if not result:
-        return jsonify({"error": "Auteur introuvable ou pas de données cloud"}), 404
+        return jsonify({"error": "Auteur introuvable"}), 404
 
     cloud_url = result[0] 
-    # Ex: https://storage.googleapis.com/mon-bucket/data_tolstoi.json
 
-    # 2. LAZY LOADING : On télécharge les données brutes depuis Google Cloud
-    # Pandas sait lire directement une URL
+    # 2. Charger les données depuis le Cloud (Lazy Loading)
     try:
-        # Si c'est du JSON sur le cloud
+        # Pandas lit directement l'URL Google Cloud (si le fichier est public)
+        # Si vos fichiers Cloud sont des JSON :
         df_author = pd.read_json(cloud_url)
-        # Si c'est du CSV
+        
+        # Si vos fichiers Cloud sont des CSV, décommentez la ligne ci-dessous :
         # df_author = pd.read_csv(cloud_url)
     except Exception as e:
-        return jsonify({"error": f"Erreur chargement Cloud: {e}"}), 500
+        return jsonify({"error": f"Erreur lecture Cloud: {e}"}), 500
 
-    # 3. Génération du Graphique
-    # Il faut modifier votre fonction plot_author_topics pour qu'elle prenne 
-    # le DataFrame (df_author) en argument au lieu de lire un fichier global.
-    
-    # Avant : fig = topic_author_viz.plot_author_topics(author)
-    # Après :
-    fig = topic_author_viz.plot_author_topics(df_author, graph_type=graph_type)
+    # 3. Générer le graph
+    try:
+        # On passe le DataFrame téléchargé à la fonction de dessin
+        fig = topic_author_viz.plot_author_topics(df_author, graph_type=graph_type)
 
-    # 4. Encodage et envoi
-    img_bytes = io.BytesIO()
-    fig.savefig(img_bytes, format="png", bbox_inches="tight")
-    plt.close(fig)
-    img_bytes.seek(0)
-    img_base64 = base64.b64encode(img_bytes.read()).decode("utf-8")
-
-    return jsonify({"img": img_base64})
+        img_bytes = io.BytesIO()
+        fig.savefig(img_bytes, format="png", bbox_inches="tight")
+        plt.close(fig)
+        img_bytes.seek(0)
+        img_base64 = base64.b64encode(img_bytes.read()).decode("utf-8")
+        
+        return jsonify({"img": img_base64})
+    except Exception as e:
+        return jsonify({"error": f"Erreur génération graph: {e}"}), 500
 
 # ---------------------------------------------------------------------------
 # SERVER LAUNCH
 # ---------------------------------------------------------------------------
-if _name_ == "_main_":
-    # Sur Render, le port est défini par l'environnement, sinon 5000 par défaut
+if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=True) # Debug=False en production !
+    app.run(host='0.0.0.0', port=port, debug=True)

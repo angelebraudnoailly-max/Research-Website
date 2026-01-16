@@ -9,10 +9,10 @@ import os
 
 FILES_CONFIG = {
     # "nom_fichier_local" : "nom_table_render"
-    "LeMonde_pour_db.csv": "table_lemonde",
-    "CAIRN_LDA_LIGHT_pour_db.csv": "table_CAIRNLIGHT",
-    "CAIRN_final_cleaned_pour_db.csv": "table_CAIRNCLEAN",
-    "topics_data.json": "table_json"  # Votre fichier JSON
+    "LeMonde_pour_db.csv": "colonnes_lemonde",
+    "CAIRN_LDA_LIGHT_pour_db.csv": "colonnes_CAIRNLIGHT",
+    "CAIRN_final_cleaned_pour_db.csv": "colonnes_CAIRNCLEAN",
+    "topics_data.json": "colonnes_json"  # Votre fichier JSON
 }
 
 def upload_data():

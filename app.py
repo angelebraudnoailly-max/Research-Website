@@ -30,56 +30,74 @@ def index():
     Charge les données globales depuis PostgreSQL pour l'accueil.
     """
     conn = get_db_connection()
-    
-    # 1. LISTE DES AUTEURS (Dropdown)
-    # MAJ INTEGRÉE : On utilise SQL pour découper les auteurs multiples (séparés par '|')
     cur = conn.cursor()
+
+    # --- INITIALISATION DES VARIABLES PAR DÉFAUT ---
+    # Cela empêche le site de planter si une requête SQL échoue
+    unique_names = []
+    graph_mon, graph_cairn = "", ""
+    g_freq, g_prop, g_comb, g_disp = "", "", "", ""
+    author_stats = {
+        "mean": 0, "median": 0, "min": 0, "max": 0, "unique_authors": 0,
+        "percentile_25": 0, "percentile_75": 0
+    }
+    topics = {}
+
+    # 1. LISTE DES AUTEURS (Dropdown)
     try:
-        # Note : J'utilise la colonne 'name' comme vu dans votre script précédent.
-        # Si votre colonne s'appelle toujours 'nom_auteur', remplacez 'name' par 'nom_auteur' ci-dessous.
         sql_authors = """
             SELECT DISTINCT TRIM(unnest(string_to_array(name, '|'))) 
             FROM colonnes_CAIRNLIGHT 
             ORDER BY 1 ASC
         """
         cur.execute(sql_authors)
-        # On filtre les résultats vides ou nuls
         unique_names = [row[0] for row in cur.fetchall() if row[0] and row[0].strip() != '']
     except Exception as e:
-        print(f"Erreur récupération auteurs : {e}")
-        unique_names = []
-    cur.close()
+        print(f"❌ Erreur Auteurs : {e}")
+    
+    cur.close() # On ferme le curseur
 
-    # 2. GRAPHIQUES TEMPORELS (Le Monde / Cairn)
+    # 2. GRAPHIQUES TEMPORELS
     try:
-        # On ne charge que les colonnes nécessaires pour économiser la RAM
-        df_cairn_light = pd.read_sql("SELECT annee FROM colonnes_CAIRNLIGHT", conn) 
         df_mon_light = pd.read_sql("SELECT date_published FROM colonnes_lemonde", conn)
-        
+        df_cairn_light = pd.read_sql("SELECT annee FROM colonnes_CAIRNLIGHT", conn) 
         graph_mon, graph_cairn = get_graphs(df_cairn_light, df_mon_light)
     except Exception as e:
-        print(f"Erreur graphs temporels : {e}")
-        graph_mon, graph_cairn = "", ""
+        print(f"❌ Erreur Graphs Temporels : {e}")
 
-   # 3. STATISTIQUES LDA (Graphs colorés)
+    # 3. STATISTIQUES LDA
     try:
-        # On récupère tout le contenu de la table Cairn Light pour les stats globales
         df_lda = pd.read_sql("SELECT * FROM colonnes_CAIRNLIGHT", conn)
-        g_freq, g_prop, g_comb, g_disp, author_stats = get_lda_insights(df_lda)
-    except Exception as e:
-        print(f"❌ Erreur CRITIQUE LDA stats : {e}") # On verra l'erreur dans les logs
-        g_freq, g_prop, g_comb, g_disp = "", "", "", ""
+        g_freq, g_prop, g_comb, g_disp, author_stats_calc = get_lda_insights(df_lda)
         
-        # CORRECTION ICI : On donne des valeurs par défaut pour éviter le crash HTML
-        author_stats = {
-            "mean": 0, 
-            "median": 0, 
-            "min": 0, 
-            "max": 0, 
-            "unique_authors": 0,
-            "percentile_25": 0, # Ajouté par sécurité si le HTML le demande
-            "percentile_75": 0  # Ajouté par sécurité
-        }
+        # Si le calcul a réussi et n'est pas vide, on met à jour
+        if author_stats_calc:
+            author_stats = author_stats_calc
+            
+    except Exception as e:
+        print(f"❌ Erreur LDA stats : {e}")
+
+    # 4. RECUPERATION DES TOPICS (C'est ce bloc qui vous manquait !)
+    try:
+        # On lit la table colonnes_json
+        df_json = pd.read_sql("SELECT * FROM colonnes_json", conn)
+        
+        if not df_json.empty:
+            # Conversion en dictionnaire { "0": ["mot1", ...], "1": ... }
+            if 'topic_id' in df_json.columns and 'topic_words' in df_json.columns:
+                for _, row in df_json.iterrows():
+                    # json.loads est important car on a stocké une string "[...]" dans la DB
+                    import json 
+                    try:
+                        words = json.loads(row['topic_words'])
+                    except:
+                        words = row['topic_words'] # Fallback si c'est déjà une liste (rare en SQL)
+                    topics[str(row['topic_id'])] = words
+            else:
+                topics = df_json.to_dict(orient='records')
+    except Exception as e:
+        print(f"❌ Erreur Topics JSON : {e}")
+
     conn.close()
 
     return render_template(
@@ -94,7 +112,6 @@ def index():
         author_stats=author_stats,
         unique_names=unique_names
     )
-
 # ---------------------------------------------------------------------------
 # CONTACT ROUTE
 # ---------------------------------------------------------------------------

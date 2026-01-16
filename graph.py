@@ -5,9 +5,6 @@ import matplotlib.pyplot as plt
 import io
 import base64
 
-CAIRN_CSV = "https://storage.googleapis.com/russian_database/CAIRN_final_cleaned.csv"
-LEMONDE_CSV = "https://storage.googleapis.com/russian_database/LeMonde_auteur_filtre%CC%8150.csv"
-
 def create_bar_graph(x, y, title, xlabel="Year", ylabel="Number of articles", color="skyblue", tick_step=10):
     plt.figure(figsize=(18, 9), dpi=120)
     plt.bar(x, y, color=color)

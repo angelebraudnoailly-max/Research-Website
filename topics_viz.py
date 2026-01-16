@@ -11,7 +11,7 @@ import ast
 # ---------------------------------------------------------------------------
 # CSV source
 # ---------------------------------------------------------------------------
-CSV_FILE = "CAIRN_LDA_LIGHT.csv"  # <-- your local CSV file
+CSV_FILE = "https://storage.googleapis.com/russian_database/CAIRN_LDA_LIGHT.csv"  # <-- your local CSV file
 
 # ---------------------------------------------------------------------------
 # Utility functions

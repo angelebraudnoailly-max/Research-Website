@@ -3,7 +3,7 @@ import json
 # ---------------------------------------------------------------------------
 # JSON source
 # ---------------------------------------------------------------------------
-JSON_FILE = "topics_data.json"  # <-- your local JSON file
+JSON_FILE = "https://storage.googleapis.com/russian_database/topics_data.json"  # <-- your local JSON file
 
 def get_lda_topics():
     """

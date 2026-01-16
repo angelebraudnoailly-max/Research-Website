@@ -7,7 +7,7 @@ from collections import Counter
 # ---------------------------------------------------------------------------
 # Load data from CSV
 # ---------------------------------------------------------------------------
-CSV_FILE = "CAIRN_LDA_LIGHT.csv"  # <-- your CSV file
+CSV_FILE = "https://storage.googleapis.com/russian_database/CAIRN_LDA_LIGHT.csv"  # <-- your CSV file
 df_filtered = pd.read_csv(CSV_FILE)
 
 # Ensure the 'annee' column is integer type

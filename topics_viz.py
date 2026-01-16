@@ -94,25 +94,42 @@ def get_lda_insights(df):
         g_disp = fig_to_base64(plt)
     else: g_disp = ""
 
+   # ... (le début de la fonction reste identique) ...
+    
     # --- Author Stats ---
     author_topics = defaultdict(set)
     for _, row in df_work.iterrows():
         # Adaptez 'name' si votre colonne auteur s'appelle 'nom_auteur'
         col_nom = 'name' if 'name' in df_work.columns else 'nom_auteur'
-        if pd.notna(row.get(col_nom)):
+        
+        # Sécurité : on vérifie que la colonne existe et n'est pas vide
+        if col_nom in row and pd.notna(row[col_nom]):
             authors = [a.strip() for a in str(row[col_nom]).split('|')]
             for author in authors:
-                for topic_id, _ in row['top_2_topics_with_prop']:
-                    author_topics[author].add(topic_id)
+                # Sécurité : on vérifie que la liste des topics n'est pas vide
+                if isinstance(row['top_2_topics_with_prop'], list):
+                    for topic_id, _ in row['top_2_topics_with_prop']:
+                        author_topics[author].add(topic_id)
     
     counts = np.array([len(t) for t in author_topics.values()])
     
+    # --- CORRECTION ICI : Gestion du cas vide ---
     if len(counts) > 0:
         author_stats = {
-            "mean": np.mean(counts), "median": int(np.median(counts)),
-            "min": int(np.min(counts)), "max": int(np.max(counts)),
+            "mean": np.mean(counts), 
+            "median": int(np.median(counts)),
+            "min": int(np.min(counts)), 
+            "max": int(np.max(counts)),
             "unique_authors": len(counts)
         }
-    else: author_stats = {}
+    else:
+        # Si vide, on renvoie des 0 pour éviter le crash HTML
+        author_stats = {
+            "mean": 0, 
+            "median": 0,
+            "min": 0, 
+            "max": 0,
+            "unique_authors": 0
+        }
 
     return g_freq, g_prop, g_comb, g_disp, author_stats

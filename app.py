@@ -61,20 +61,25 @@ def index():
         print(f"Erreur graphs temporels : {e}")
         graph_mon, graph_cairn = "", ""
 
-    # 3. STATISTIQUES LDA (Graphs colorés)
+   # 3. STATISTIQUES LDA (Graphs colorés)
     try:
-        # On récupère tout le contenu de la table Cairn pour les stats globales
+        # On récupère tout le contenu de la table Cairn Light pour les stats globales
         df_lda = pd.read_sql("SELECT * FROM colonnes_CAIRNLIGHT", conn)
-        
         g_freq, g_prop, g_comb, g_disp, author_stats = get_lda_insights(df_lda)
-        
-        # Pour les topics, on peut utiliser un dictionnaire vide ou une autre table si dispo
-        topics = {} 
     except Exception as e:
-        print(f"Erreur LDA stats : {e}")
-        g_freq, g_prop, g_comb, g_disp, author_stats = "", "", "", "", {}
-        topics = {}
-
+        print(f"❌ Erreur CRITIQUE LDA stats : {e}") # On verra l'erreur dans les logs
+        g_freq, g_prop, g_comb, g_disp = "", "", "", ""
+        
+        # CORRECTION ICI : On donne des valeurs par défaut pour éviter le crash HTML
+        author_stats = {
+            "mean": 0, 
+            "median": 0, 
+            "min": 0, 
+            "max": 0, 
+            "unique_authors": 0,
+            "percentile_25": 0, # Ajouté par sécurité si le HTML le demande
+            "percentile_75": 0  # Ajouté par sécurité
+        }
     conn.close()
 
     return render_template(

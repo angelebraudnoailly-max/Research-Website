@@ -425,12 +425,12 @@
                   <div class="stat-card">
                     <span>Mean Topics</span>
                     <strong>
-  {% if author_stats.mean is defined and author_stats.mean is not none %}
-    {{ author_stats.mean|round(2) }}
-  {% else %}
-    N/A
-  {% endif %}
-</strong>
+                      {% if author_stats.mean is defined and author_stats.mean is not none %}
+                        {{ author_stats.mean|round(2) }}
+                      {% else %}
+                        N/A
+                      {% endif %}
+                    </strong>
                   </div>
                   <div class="stat-card">
                     <span>Median</span>
